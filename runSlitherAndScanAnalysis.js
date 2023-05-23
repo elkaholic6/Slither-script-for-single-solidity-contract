@@ -1,8 +1,10 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
-const readline = require("readline");
-const colors = require("colors");
+const readline = require('readline');
+const colors = require('colors');
 
+
+let stderrLogged = false;
 
 function findFile(dir, filename) {
   const files = fs.readdirSync(dir);
@@ -43,8 +45,6 @@ function runAndScanSingleContractWithSlither(grepArgs, analysisResultsFile, filt
   grepChild.stdout.pipe(filteredLinesStream);
   grepChild.stderr.pipe(filteredLinesStream);
 
-
-
   grepChild.on('exit', (code) => {
     if (code === 0) {
       console.log(`Filtered lines written to ${filteredLinesFile}`.green);
@@ -54,24 +54,18 @@ function runAndScanSingleContractWithSlither(grepArgs, analysisResultsFile, filt
   });
 
 
-
-  let stderrLogged = false;
-
   child.stderr.on('data', () => {
     if (!stderrLogged) {
-      console.log('stderr data present--will result in error during slither and/or filtered analysis. OK to ignore'.yellow);
+      console.log('stderr data present--will result in an error during slither and/or filtered analysis. OK to ignore'.yellow);
       stderrLogged = true;
     }
   });
-
-
 
   child.on('exit', (code) => {
     if (code === 0) {
       console.log(`Analysis results written to ${analysisResultsFile}`.green);
     } else {
       console.error('Error occurred during slither analysis'.red);
-      
     }
   });
 }
@@ -81,16 +75,66 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-rl.question('What is the .sol file you want to analyze? Must end with .sol: \n'.cyan, (solFile) => {
-  if (!solFile.endsWith('.sol')) {
-    console.error('Invalid file format. Please provide a .sol file.');
-    rl.close();
-    return;
-  }
+const analyzeMultipleContracts = (rootDir, resultsFile) => {
+  const solFiles = [];
 
-  const foundFilePath = findFile('.', solFile);
-  if (!foundFilePath) {
-    console.error('File does not exist.');
+  const promptSolFile = () => {
+    rl.question('What is the .sol file you want to analyze? Must end with .sol (leave empty to proceed): \n'.cyan, (solFile) => {
+      if (solFile === '') {
+        analyzeContracts(rootDir, solFiles, resultsFile);
+        return;
+      }
+
+      if (!solFile.endsWith('.sol')) {
+        console.error('Invalid file format. Please provide a .sol file.');
+        promptSolFile();
+        return;
+      }
+
+      const foundFilePath = findFile(rootDir, solFile);
+      if (!foundFilePath) {
+        console.error('File does not exist.');
+        promptSolFile();
+        return;
+      }
+
+      rl.question('Provide name for filtered file. Must end with .txt: \n'.cyan, (filteredFile) => {
+        if (!filteredFile.endsWith('.txt')) {
+          console.error('Invalid file format. Please provide a .txt file for filtered results.');
+          rl.close();
+          return;
+        }
+
+        const grepArgs = [solFile];
+        const analysisResultsFile = `${rootDir}/${resultsFile}`;
+        const filteredLinesFile = `${rootDir}/${filteredFile}`;
+
+        solFiles.push({ filePath: foundFilePath, grepArgs, filteredLinesFile });
+        promptSolFile();
+      });
+    });
+  };
+
+  promptSolFile();
+};
+
+const analyzeContracts = (rootDir, solFiles, resultsFile) => {
+  const analysisResultsFile = `${rootDir}/${resultsFile}`;
+
+  solFiles.forEach((solFile) => {
+    const { filePath, grepArgs, filteredLinesFile } = solFile;
+    process.chdir(rootDir);
+
+    console.log(`Running Slither analysis on ${filePath}...`.cyan);
+    runAndScanSingleContractWithSlither(grepArgs, analysisResultsFile, filteredLinesFile);
+  });
+
+  rl.close();
+};
+
+rl.question('Enter full path of the root directory to analyze: \n'.cyan, (rootDir) => {
+  if (!fs.existsSync(rootDir)) {
+    console.error('Directory does not exist.');
     rl.close();
     return;
   }
@@ -102,16 +146,6 @@ rl.question('What is the .sol file you want to analyze? Must end with .sol: \n'.
       return;
     }
 
-    rl.question('Provide name for filtered file. Must end with .txt: \n'.cyan, (filteredFile) => {
-      if (!filteredFile.endsWith('.txt')) {
-        console.error('Invalid file format. Please provide a .txt file for filtered results.');
-        rl.close();
-        return;
-      }
-
-      const grepArgs = [solFile];
-      runAndScanSingleContractWithSlither(grepArgs, resultsFile, filteredFile);
-      rl.close();
-    });
+    analyzeMultipleContracts(rootDir, resultsFile);
   });
 });
