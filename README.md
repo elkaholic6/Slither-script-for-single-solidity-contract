@@ -32,6 +32,7 @@ Provide the name for a particular .sol file to be analyzed. The file extension m
 This will be the Slither analysis associated with the .sol file given in the previous question. This file's extension must be `.txt`.
 
 3. Once you provide the necessary information, the script will run the Slither analysis on the entire codebase, will filter the analysis based on the specified .sol files provided, and will output the results to their respective .txt files.
+#### NOTE: Slither may send certain messages or information to stderr instead of stdout if it encounters any issues or errors during the analysis. This script accounts for such instances and will direct both stderr and stdout to the intended text file. This will result in an error being logged to the console. If so, this error may be ignored if the desired results are achieved.
 
   - Complete Slither analysis results written to the entire slither text file:
 This file contains the complete output of the Slither analysis.
